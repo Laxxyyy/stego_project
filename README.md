@@ -1,9 +1,9 @@
 # 🔐 StegoVault · Hidden Ink
 
-> **LSB + CA-HRD Image Steganography** — College Project Demo  
-> Built with Streamlit · PIL · NumPy · SciPy
+> **LSB + CA-HRD Image Steganography · AES-256-GCM Encrypted**  
+> Built with Streamlit · PIL · NumPy · SciPy · Cryptography
 
-StegoVault lets you conceal secret text messages inside ordinary images and retrieve them later — completely invisible to the naked eye. It supports two steganographic methods: the classic **LSB** technique and the research-grade **CA-HRD** (Content-Aware Hybrid Reversible Steganography) algorithm.
+StegoVault lets you conceal secret text messages inside ordinary images and retrieve them later — completely invisible to the naked eye. It supports two steganographic methods: the classic **LSB** technique and the research-grade **CA-HRD** (Content-Aware Hybrid Reversible Steganography) algorithm. Messages can optionally be encrypted with **AES-256-GCM** before embedding.
 
 ---
 
@@ -11,20 +11,14 @@ StegoVault lets you conceal secret text messages inside ordinary images and retr
 
 - [Features](#features)
 - [Methods Overview](#methods-overview)
-  - [LSB — Classic](#lsb--classic)
-  - [CA-HRD — Advanced](#ca-hrd--advanced)
 - [Installation](#installation)
 - [Running the App](#running-the-app)
 - [Usage Guide](#usage-guide)
-  - [Encoding a Message](#encoding-a-message)
-  - [Decoding a Message](#decoding-a-message)
-- [File Reference](#file-reference)
+- [Security Architecture](#security-architecture)
 - [Technical Deep-Dive](#technical-deep-dive)
-  - [LSB Algorithm](#lsb-algorithm)
-  - [CA-HRD Algorithm](#ca-hrd-algorithm)
-  - [Quality Metrics](#quality-metrics)
 - [Method Comparison](#method-comparison)
 - [Project Structure](#project-structure)
+- [Testing](#testing)
 - [Dependencies](#dependencies)
 - [References](#references)
 
@@ -33,13 +27,17 @@ StegoVault lets you conceal secret text messages inside ordinary images and retr
 ## Features
 
 - **Two steganography methods** selectable per encode/decode session
+- **AES-256-GCM encryption** — optional password-based message encryption
+- **Auto-detect encryption** — decoder automatically detects if a message was encrypted
+- **Batch processing** — embed the same message in multiple images at once
 - **Live capacity indicator** with colour-coded progress bar
 - **Side-by-side image preview** (original vs. stego output)
-- **PSNR & SSIM quality metrics** computed after every encode
-- **Residual file system** for CA-HRD perfect reversible recovery
-- **Download buttons** for stego image and residual file
-- **Decoded message download** as `.txt`
-- **Method comparison tab** with full feature table and technical deep-dive
+- **PSNR & windowed SSIM** quality metrics (Wang et al. 2004 standard)
+- **Histogram Analysis tab** — per-channel pixel distribution comparison
+- **Progress bars** for long-running CA-HRD operations
+- **Safe residual format** (.svr) — no Python pickle, optionally encrypted
+- **Image format validation** — warns when JPEG is uploaded for decoding
+- **Length-prefix protocol** — no delimiter vulnerability
 - Refined dark editorial UI with responsive layout
 
 ---
@@ -48,11 +46,11 @@ StegoVault lets you conceal secret text messages inside ordinary images and retr
 
 ### LSB — Classic
 
-Hides bits by replacing the **Least Significant Bit** of each pixel channel value. A change of ±1 per channel is imperceptible to human vision. Fast, high-capacity, and simple.
+Hides bits by replacing the **Least Significant Bit** of each pixel channel value. Fully vectorized using NumPy — no Python loops.
 
 ### CA-HRD — Advanced
 
-**Content-Aware Hybrid Reversible Steganography** uses luminance variance of each 8×8 image block to decide how many pixels to use for embedding — more bits in textured regions, fewer in smooth areas. Supports **Reversible Data Hiding (RDH)**: with the companion residual file, the original cover image can be mathematically restored.
+**Content-Aware Hybrid Reversible Steganography** embeds payload bits into **mid-frequency DCT coefficients** within 8×8 blocks. Luminance variance drives adaptive capacity: textured regions hold more data. A residual file enables **perfect reversible data hiding (RDH)**.
 
 ---
 
@@ -65,7 +63,7 @@ Hides bits by replacing the **Least Significant Bit** of each pixel channel valu
 git clone https://github.com/yourname/stegovault.git
 cd stegovault
 
-# 2. (Recommended) Create a virtual environment
+# 2. Create a virtual environment
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 
@@ -90,70 +88,61 @@ The app opens automatically at `http://localhost:8501`.
 ### Encoding a Message
 
 1. Open the **🔒 Encode** tab.
-2. **Choose a method** from the selectbox:
-   - `LSB (Classic)` — fastest, highest capacity
-   - `CA-HRD (Advanced – Reversible & Content-Aware)` — better imperceptibility, reversible
-3. **Upload a cover image** (PNG or JPG). The app shows the image dimensions and available capacity for the selected method.
-4. **Type your secret message** in the text area. The live capacity bar shows how much of the image you are using.
-5. Click **🔒 Embed Message**.
-6. After embedding, the app shows:
-   - Side-by-side preview of original and stego images
-   - PSNR, SSIM, and output file size metrics
-   - Download button(s)
-
-**LSB output:** one PNG download.
-
-**CA-HRD output:** two downloads — the stego PNG **and** a `residual.npy` file.
-
-> ⚠️ **Keep `residual.npy` alongside the stego image.** It is required for perfect CA-HRD decoding. Without it, decoding still works but is best-effort.
-
----
+2. **Choose a method**: `LSB (Classic)` or `CA-HRD (Advanced)`.
+3. *(Optional)* Enter a **password** in the 🔑 field for AES-256-GCM encryption.
+4. *(Optional)* Enable **📦 Batch Mode** to embed in multiple images.
+5. **Upload a cover image** (PNG or JPG).
+6. **Type your secret message** in the text area.
+7. Click **🔒 Embed Message**.
+8. Download the stego PNG (and `.svr` residual file for CA-HRD).
 
 ### Decoding a Message
 
 1. Open the **🔓 Decode** tab.
-2. **Choose the matching decoding method** (must match what was used during encoding).
+2. **Choose the matching method** (must match encoding).
 3. **Upload the stego PNG** exported by StegoVault.
-4. *(CA-HRD only)* Upload the `residual.npy` file for perfect recovery.
-5. Click **🔓 Decode Message**.
-6. The revealed message appears in a monospace code box with character/word/byte stats.
-7. Optionally download the message as a `.txt` file.
+4. *(CA-HRD only)* Upload the `.svr` residual file for perfect recovery.
+5. If the message was encrypted, enter the **password**.
+6. Click **🔓 Decode Message**.
 
-> ⚠️ Always use the original **PNG** file exported by StegoVault. Re-saving as JPEG destroys embedded data for both methods.
+> ⚠️ Always use the original **PNG** file. Re-saving as JPEG destroys embedded data.
 
 ---
 
-## File Reference
+## Security Architecture
 
-| File | Description |
-|---|---|
-| `app.py` | Main Streamlit application (all logic + UI) |
-| `requirements.txt` | Python package dependencies |
-| `stego_image.png` | LSB stego output |
-| `stego_cahrd.png` | CA-HRD stego output |
-| `residual.npy` | CA-HRD residual pack (capacity map + original LSBs) |
-| `decoded_secret.txt` | Downloaded decoded message |
-
-### residual.npy format
-
-The residual file is a NumPy object array of length 2:
+### Encryption Flow
 
 ```
-residual[0]  →  cap_map   shape (n_blocks_h, n_blocks_w)  dtype uint8
-                Per-block pixel capacity used during encoding.
-
-residual[1]  →  orig_lsb  shape (H, W, 3)                 dtype uint8
-                Original pixel LSBs of the cover image.
-                Used to restore the exact cover image (RDH).
+Password → PBKDF2-HMAC-SHA256 (480,000 iterations, random 16-byte salt)
+         → 256-bit AES key
+Message  → AES-256-GCM encrypt → ciphertext + 16-byte auth tag
 ```
 
-Load manually:
-```python
-import numpy as np
-residual = np.load("residual.npy", allow_pickle=True)
-cap_map  = residual[0]
-orig_lsb = residual[1]
+**Wire format:** `salt (16 B) ‖ nonce (12 B) ‖ ciphertext + tag`
+
+Total overhead: **44 bytes** per encrypted message.
+
+### Embedded Bitstream Protocol
+
 ```
+[32 bits: payload length, big-endian] [8 bits: flags] [payload bits…]
+```
+
+**Flags byte:** bit 0 = encrypted (1) / plaintext (0); bits 1–7 reserved.
+
+This replaces the old delimiter-based protocol, eliminating:
+- Delimiter collision vulnerability
+- Fixed search patterns for steganalyzers
+
+### Residual File Format (.svr)
+
+```
+b"SVRD" (4 B) │ version (1 B) │ encrypted_flag (1 B) │ body
+```
+
+Body contains: `cap_map + correction_bits + orig_pixel_lsbs` (raw binary, no pickle).
+When a password is set, the body is AES-256-GCM encrypted.
 
 ---
 
@@ -161,91 +150,37 @@ orig_lsb = residual[1]
 
 ### LSB Algorithm
 
-**Embedding:**
-1. Append the delimiter `|||END|||` to the message.
-2. Encode payload as UTF-8 → flat binary string (8 bits per byte).
-3. Walk every pixel channel in raster order. Replace the LSB of each channel value with the next payload bit (`val = (val & 0xFE) | bit`). Maximum distortion: ±1 per channel.
-4. Save as lossless PNG.
+**Embedding (vectorized):**
+```python
+flat[:n_bits] = (flat[:n_bits] & 0xFE) | payload_bits
+```
 
-**Extraction:**
-1. Read LSBs of every channel in the same raster order.
-2. Group bits into bytes; decode as UTF-8.
-3. Stop when the delimiter `|||END|||` is found.
+No Python loops — pure NumPy array operations. Maximum distortion: ±1 per channel.
 
-**Capacity:** `floor((H × W × 3 − delimiter_bits) / 8)` bytes.
-
----
+**Capacity:** `(H × W × 3 − 40) / 8` bytes (40 = header bits).
 
 ### CA-HRD Algorithm
 
-#### Content-Aware Capacity Selection
+**DCT Transform:** Uses `scipy.fft.dctn/idctn` (modern API, replaces deprecated `fftpack`).
 
-For each non-overlapping 8×8 pixel block, the **luminance variance** of the original image block is computed:
+**Content-Aware Capacity:** Per 8×8 block, luminance variance maps to DCT coefficients used:
 
-```
-Y = 0.299·R + 0.587·G + 0.114·B
-variance = Var(Y_block)
-```
-
-The variance is mapped to a **pixel capacity** (number of pixels used per block):
-
-| Variance range | Pixels used | Rationale |
+| Variance | Coefficients/channel | Bits/block (3 ch) |
 |---|---|---|
-| > 800 | 16 | Rich texture — changes invisible |
-| > 300 | 8 | Moderate texture |
-| > 80 | 4 | Low texture |
-| ≤ 80 | 2 | Smooth/flat — minimise distortion |
+| > 800 | 6 | 18 |
+| > 300 | 4 | 12 |
+| > 80 | 2 | 6 |
+| ≤ 80 | 1 | 3 |
 
-Each pixel contributes 3 bits (one per RGB channel), so effective bits per block range from 6 to 48.
-
-#### Embedding
-
-1. Convert payload (message + delimiter) → binary bitstream.
-2. For each 8×8 block in raster order:
-   - Compute luminance variance → capacity.
-   - Store capacity in `cap_map[bi, bj]`.
-   - Embed bits into the LSBs of the first `capacity` pixels in the block across all 3 channels.
-3. Save `cap_map` and original LSBs (`orig_lsb = arr & 1`) into `residual.npy`.
-4. Save stego image as lossless PNG.
-
-#### Extraction
-
-1. Load stego image.
-2. If residual is available: read `cap_map` directly (guaranteed sync).  
-   If no residual: recompute variance from the stego image (works for lossless PNG; may diverge slightly for processed images).
-3. For each block, read the embedded bits from the matching pixel LSBs.
-4. Accumulate bits → bytes → UTF-8 text. Stop at delimiter.
-
-#### Reversible Data Hiding (RDH)
-
-The `orig_lsb` array in `residual.npy` stores the original LSB of every pixel channel before modification. To perfectly restore the cover image:
-
-```python
-cover_restored = stego_arr.copy()
-cover_restored[:, :, :] = (stego_arr & 0xFE) | orig_lsb
-```
-
-This satisfies the RDH property: the original image is recovered with zero distortion after message extraction.
-
----
+**Residual Correction:** XOR correction bits fix DCT→pixel→DCT rounding errors. Original pixel LSBs enable perfect cover image restoration (RDH).
 
 ### Quality Metrics
 
-**PSNR (Peak Signal-to-Noise Ratio)**
+**PSNR:** `10 · log₁₀(255² / MSE)` dB
 
-```
-PSNR = 10 · log₁₀(255² / MSE)   [dB]
-```
-
-Higher is better. Typical values:
-- LSB: ~51–58 dB (minimal pixel changes)
-- CA-HRD: ~46–54 dB (slightly more pixels touched per block but perceptually well-distributed)
-
-**SSIM (Structural Similarity Index)**
-
-Range [0, 1]. Values above 0.999 are considered visually lossless. Both methods consistently achieve > 0.999 on standard test images.
-
-> Note: LSB tends to score higher PSNR than CA-HRD because LSB changes exactly 1 bit per pixel uniformly, while CA-HRD touches multiple pixels per block. However, CA-HRD concentrates changes in visually busy areas, making them perceptually less noticeable despite the lower PSNR number.
+**SSIM:** Proper 11×11 Gaussian-windowed implementation matching Wang et al. (2004):
+- `C1 = (0.01·255)²`, `C2 = (0.03·255)²`
+- Local statistics via `scipy.ndimage.convolve`
 
 ---
 
@@ -253,17 +188,15 @@ Range [0, 1]. Values above 0.999 are considered visually lossless. Both methods 
 
 | Property | LSB | CA-HRD |
 |---|---|---|
-| Embedding domain | Spatial (pixel values) | Spatial, block-adaptive |
-| Capacity | High (1 bit/channel/pixel) | Adaptive (6–48 bits/block) |
+| Embedding domain | Spatial (pixel LSBs) | Frequency (DCT coefficients) |
+| Capacity | High (1 bit/channel/pixel) | Adaptive (3–18 bits/block) |
 | PSNR | ~51–58 dB | ~46–54 dB |
 | SSIM | > 0.999 | > 0.999 |
-| Perceptual quality | Good | Excellent (texture-aware) |
-| JPEG robustness | ❌ Destroyed | ❌ Destroyed (use PNG) |
 | Reversibility | ❌ Cover image lost | ✅ Perfect via residual |
 | Content-awareness | ❌ Uniform | ✅ Variance-adaptive |
-| Extra files | None | `residual.npy` |
-| Speed | Very fast | Moderate |
-| Best for | Large messages, trusted channels | High-quality covert comms, forensics |
+| Encryption | ✅ AES-256-GCM | ✅ AES-256-GCM |
+| Extra files | None | `residual.svr` |
+| Speed | Very fast (vectorized) | Moderate (block DCT) |
 
 ---
 
@@ -271,25 +204,52 @@ Range [0, 1]. Values above 0.999 are considered visually lossless. Both methods 
 
 ```
 stegovault/
-├── app.py              # Streamlit app — all logic and UI
-├── requirements.txt    # Python dependencies
-└── README.md           # This file
+├── app.py                  # Streamlit UI (imports from core/)
+├── core/
+│   ├── __init__.py         # Package exports
+│   ├── lsb.py              # Vectorized LSB encode/decode
+│   ├── cahrd.py            # DCT-domain CA-HRD encode/decode
+│   ├── metrics.py          # PSNR + windowed SSIM + histograms
+│   ├── crypto.py           # AES-256-GCM encryption
+│   └── utils.py            # Bit conversion, framing, residual I/O
+├── tests/
+│   ├── test_lsb.py         # LSB round-trip & edge case tests
+│   ├── test_cahrd.py       # CA-HRD round-trip & pipeline tests
+│   ├── test_metrics.py     # PSNR, SSIM, histogram tests
+│   ├── test_crypto.py      # Encryption round-trip & error tests
+│   └── test_utils.py       # Bit conversion, framing, residual tests
+├── requirements.txt
+└── README.md
 ```
+
+---
+
+## Testing
+
+Run the full test suite:
+
+```bash
+python -m pytest tests/ -v
+```
+
+**59 tests** covering:
+- Encryption: round-trips, wrong password, corruption, overhead
+- LSB: round-trips, capacity, Unicode, binary data, visual similarity
+- CA-HRD: round-trips with/without residual, serialization pipeline
+- Metrics: PSNR identical/different, SSIM windowed, histograms
+- Utils: bit conversion, frame protocol, residual I/O
 
 ---
 
 ## Dependencies
 
 ```
-streamlit >= 1.32.0
-Pillow    >= 10.0.0
-numpy     >= 1.26.0
-scipy     >= 1.12.0
-```
-
-Install with:
-```bash
-pip install -r requirements.txt
+streamlit    >= 1.32.0    # Web UI framework
+Pillow       >= 10.0.0    # Image I/O
+numpy        >= 1.26.0    # Array operations
+scipy        >= 1.12.0    # DCT transforms, convolution
+cryptography >= 42.0.0    # AES-256-GCM encryption
+pytest       >= 8.0.0     # Test framework
 ```
 
 ---
@@ -297,12 +257,12 @@ pip install -r requirements.txt
 ## References
 
 - Cox, I. et al. (2008). *Digital Watermarking and Steganography*. Morgan Kaufmann.
-- Tian, J. (2003). Reversible Data Embedding Using a Difference Expansion. *IEEE Transactions on Circuits and Systems for Video Technology*, 13(8), 890–896.
-- Fridrich, J. et al. (2001). Detecting LSB Steganography in Color and Grayscale Images. *IEEE Multimedia*, 8(4), 22–28.
-- Wallace, G.K. (1992). The JPEG Still Picture Compression Standard. *IEEE Transactions on Consumer Electronics*, 38(1), xviii–xxxiv.
-- Pevný, T. et al. (2010). Using High-Dimensional Image Models to Perform Highly Undetectable Steganography. *Information Hiding*, 161–177.
+- Tian, J. (2003). Reversible Data Embedding Using a Difference Expansion. *IEEE Trans. CSVT*, 13(8).
+- Fridrich, J. et al. (2001). Detecting LSB Steganography. *IEEE Multimedia*, 8(4).
+- Wallace, G.K. (1992). The JPEG Still Picture Compression Standard. *IEEE Trans. CE*, 38(1).
+- Wang, Z. et al. (2004). Image Quality Assessment: From Error Visibility to Structural Similarity. *IEEE Trans. Image Process.*, 13(4).
 
 ---
 
-*StegoVault · LSB + CA-HRD Image Steganography · College Project Demo*  
-*Built with Streamlit · PIL · NumPy · SciPy*
+*StegoVault · LSB + CA-HRD Image Steganography · AES-256-GCM Encrypted · College Project Demo*  
+*Built with Streamlit · PIL · NumPy · SciPy · Cryptography*
