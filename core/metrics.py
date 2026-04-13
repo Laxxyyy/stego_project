@@ -16,13 +16,26 @@ from scipy.ndimage import convolve
 
 # ── PSNR ─────────────────────────────────────────────────────────────────────
 
+#: Minimum MSE floor used to avoid log(0) / division by zero.
+#: Chosen so that 10·log10(255²/MSE_EPSILON) ≈ 320 dB — finite and
+#: representable in float64 (255²/1e-32 ≈ 6.5e36, which is well within
+#: the float64 range of ~1.8e308).
+_MSE_EPSILON = 255.0**2 / 1e32
+
+
 def compute_psnr(original: Image.Image, stego: Image.Image) -> float:
-    """Compute PSNR (dB) between two images.  Higher is better."""
+    """Compute PSNR (dB) between two images.  Higher is better.
+
+    When a CA-HRD (or any DCT-domain) embed causes zero net pixel change
+    after quantisation, MSE is exactly 0 and PSNR would be mathematically
+    infinite.  We clamp MSE to a tiny epsilon so the return value is a
+    large-but-finite number (~323 dB) rather than ``inf``, which lets
+    callers format the result consistently.
+    """
     orig = np.array(original.convert("RGB"), dtype=np.float64)
     stg = np.array(stego.convert("RGB"), dtype=np.float64)
     mse = np.mean((orig - stg) ** 2)
-    if mse == 0:
-        return float("inf")
+    mse = max(mse, _MSE_EPSILON)          # floor: never return inf
     return float(10.0 * np.log10(255.0**2 / mse))
 
 

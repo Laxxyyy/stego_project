@@ -431,7 +431,7 @@ with tab_encode:
                 ssim_val = metrics.compute_ssim(cover_img, stego_img)
                 stego_bytes = _pil_to_bytes(stego_img, "PNG")
                 kb_val = len(stego_bytes) / 1024
-                psnr_str = f"{psnr_val:.2f} dB" if psnr_val != float("inf") else "∞ dB"
+                psnr_str = "> 100.00 dB" if psnr_val >= 100 else f"{psnr_val:.2f} dB"
                 st.markdown(f"""
                 <div class="metric-row">
                   <div class="metric-card"><div class="metric-val">{psnr_str}</div><div class="metric-lbl">PSNR (quality)</div></div>

@@ -16,7 +16,10 @@ def _make_image(w: int = 100, h: int = 100, seed: int = 42) -> Image.Image:
 class TestPSNR:
     def test_identical_images(self):
         img = _make_image()
-        assert compute_psnr(img, img) == float("inf")
+        psnr = compute_psnr(img, img)
+        # compute_psnr no longer returns inf; it floors MSE at a tiny epsilon,
+        # giving a very large finite value (~323 dB) for identical images.
+        assert psnr > 300 and np.isfinite(psnr)
 
     def test_different_images(self):
         img1 = _make_image(seed=1)
